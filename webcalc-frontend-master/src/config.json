@@ -1,0 +1,15 @@
+{
+  "proxy": [
+    "http://custom.proxy.webcalc.40151615.qpc.hal.davecutting.uk",
+    "http://custom.proxy1.webcalc.40151615.qpc.hal.davecutting.uk",
+    "http://custom.proxy2.webcalc.40151615.qpc.hal.davecutting.uk"
+  ],
+  "operators": [
+    "add",
+    "subtract",
+    "multiply",
+    "divide",
+    "modulo"
+  ],
+  "memory": "http://stateful.saving.recall.webcalc.40151615.qpc.hal.davecutting.uk/"
+}

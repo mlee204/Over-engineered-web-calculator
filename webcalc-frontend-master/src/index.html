@@ -1,0 +1,434 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>WebCalc</title>
+    <script type="text/javascript">
+        let controller = null;
+        let allProxies = [];
+        let allOperators = [];
+        let memoryStoreRecallEndpoint = "";
+
+        async function loadJsonConfig() {
+            try {
+                let response = await fetch("config.json");
+                if (!response.ok) {
+                    throw new Error("Failed To load config.json")
+                }
+                let json = await response.json()
+               // console.log(json)
+
+                // assign json config values
+                allProxies = await json.proxy;
+                allOperators = await json.operators;
+                memoryStoreRecallEndpoint = await json.memory;
+            } catch (error) {
+                alert(error)
+                console.log(error)
+            }
+
+        }
+        async function init() {
+            await loadJsonConfig();
+            await testProxyStatus();
+        }
+
+        // Load Json and test proxy Status
+        init();
+
+        // set of all operation proxies which has passed periodical testing
+        let operationalProxies = new Set();
+
+        let value = 0;
+        let x = 0;
+        let y = 0;
+        let operation = '';
+        let proxyIndex = 0;
+
+        // test proxy endpoints status at 30 second intervals
+        setInterval(function () {
+            testProxyStatus();
+        }, 30000);
+
+
+        function Display() {
+            document.getElementById('display').value = value;
+
+        }
+
+        async function cancelAllFetchRequests() {
+            if (controller) {
+                controller.abort();
+            }
+        }
+
+        async function fetchWithTimeout(endpoint, options) {
+
+            // set Request Timeout and abort fetch request after 8 seconds if there no response
+            const {timeout = 8000} = options;
+
+            controller = new AbortController();
+
+            const id = setTimeout(() => controller.abort(), timeout);
+
+            const response = await fetch(endpoint, {
+                ...options, signal: controller.signal
+            });
+            clearTimeout(id);
+
+            return response;
+        }
+
+        async function postWithTimeout(endpoint, options, value) {
+
+            // set Request Timeout and abort fetch request after 8 seconds if there no response
+            const {timeout = 8000} = options;
+
+            controller = new AbortController();
+
+            const id = setTimeout(() => controller.abort(), timeout);
+
+            const response = await fetch(endpoint + value, {
+                signal: controller.signal,
+                method: 'POST'
+            });
+            clearTimeout(id);
+
+            return response;
+        }
+
+        async function fetchCalculations(endpoint, options) {
+            try {
+                let response = await fetchWithTimeout(endpoint, {timeout: options})
+                let json = await response.json()
+
+                if (!json.hasOwnProperty('error') || !json.hasOwnProperty('answer') || !json.hasOwnProperty('string')) {
+                    throw new Error("Json does not contain expected Key")
+                }
+
+                if (!response.ok || json.error) {
+                    throw new Error(json.string);
+                }
+                await outputAnswer(json);
+
+            } catch (error) {
+                console.log(error)
+                alert(error)
+                Clear()
+            }
+            controller = null;
+        }
+
+        function Clear() {
+            // reset variables
+            value = 0;
+            x = 0;
+            y = 0;
+            operation = '';
+
+            // cancel fetch request if Clear button is clicked
+            cancelAllFetchRequests()
+            Display();
+        }
+
+        function NumClick(n) {
+            if (value == 0)
+                value = n;
+            else {
+                value *= 10;
+                value += n;
+            }
+
+            Display();
+        }
+
+        function Plus() {
+            // if we have an outstanding operation resolve it
+            if (operation != '')
+                Equals();
+
+            x = value;
+            value = 0;
+            operation = 'add';
+
+            Display();
+        }
+
+        function Minus() {
+            // if we have an outstanding operation resolve it
+            if (operation != '')
+                Equals();
+
+            x = value;
+            value = 0;
+            operation = 'subtract';
+
+            Display();
+        }
+
+        function Multiply() {
+            // if we have an outstanding operation resolve it
+            if (operation != '')
+                Equals();
+
+            x = value;
+            value = 0;
+            operation = 'multiply';
+
+            Display();
+        }
+
+        function Divide() {
+            // if we have an outstanding operation resolve it
+            if (operation != '')
+                Equals();
+
+            x = value;
+            value = 0;
+            operation = 'divide';
+
+            Display();
+        }
+
+        function Squared() {
+            // if we have an outstanding operation resolve it
+            if (operation != '')
+                Equals();
+
+            x = value;
+            value = 0;
+            operation = 'square';
+
+            Display();
+        }
+
+        function Modulo() {
+            // if we have an outstanding operation resolve it
+            if (operation != '')
+                Equals();
+
+            x = value;
+            value = 0;
+            operation = 'modulo';
+
+            Display();
+        }
+
+        function getSetValueByIndex(target, index) {
+            if (typeof index !== 'number') throw new Error(`Index must be a number!`);
+
+            let i = 0;
+            for (const item of target) if (i++ === index) return item;
+
+            throw new Error(`Index ${index} out of bounds!`);
+        }
+
+        async function Equals() {
+            if (operation == '')
+                return;
+
+            y = value;
+            let currentProxy = getSetValueByIndex(operationalProxies, proxyIndex);
+            if (currentProxy < operationalProxies.size) {
+                proxyIndex++;
+            } else {
+                proxyIndex = 0;
+            }
+
+            let proxyUrl;
+            if (operation === "square") {
+                proxyUrl = currentProxy + "/square?x=" + x;
+            } else {
+                proxyUrl = currentProxy + "/?x=" + x + "&y=" + y + "&o=" + operation
+            }
+
+            await fetchCalculations(proxyUrl);
+
+        }
+
+        function outputAnswer(json) {
+            x = 0;
+            y = 0;
+            operation = '';
+            value = parseInt(json.answer);
+            Display();
+        }
+
+        async function MemoryStore() {
+            try {
+                Display();
+                let response = await postWithTimeout(memoryStoreRecallEndpoint, 300, value);
+                let json = await response.json();
+
+                if (!json.hasOwnProperty('error') || !json.hasOwnProperty('reference_id') || !json.hasOwnProperty('string')) {
+                    throw new Error("Json does not contain expected Key")
+                }
+                // If response is not 201 CREATED or error flag is set throw error wih custom message
+                if (response.status !== 201 || json.error) {
+                    throw new Error(json.string)
+                }
+                let message = await json.string
+                await alert(message)
+
+            } catch (error) {
+                console.log(error)
+                alert(error)
+            }
+
+            controller = null;
+        }
+
+        async function MemoryRecall() {
+            try {
+
+                let response = await fetchWithTimeout(memoryStoreRecallEndpoint + value, 300)
+                let json = await response.json();
+
+                if (!json.hasOwnProperty('error') || !json.hasOwnProperty('value') || !json.hasOwnProperty('string')) {
+                    throw new Error("Json does not contain expected Key")
+                }
+                // If response is not 200 OK or error flag is set throw error wih custom message
+                if (!response.ok || json.error) {
+                    throw new Error(json.string);
+                }
+                let recalledValue = await json.value;
+                value = await recalledValue;
+                let message = await json.string;
+                await alert(message);
+                await Display();
+
+            } catch (error) {
+                alert(error)
+                console.log(error)
+            }
+
+        }
+
+        function randomOperatorAndNumberRequest() {
+
+            let x = Math.floor(Math.random() * 100000);
+            let y = Math.floor(Math.random() * 100000);
+            const o = allOperators[Math.floor(Math.random() * allOperators.length)];
+
+            return "/?o=" + o + "&x=" + x + "&y=" + y
+
+        }
+
+        async function testProxyStatus() {
+            console.log("\n----Start proxy status test-----");
+            console.log("All proxies array");
+            console.log(allProxies);
+            for (let proxy of allProxies) {
+                try {
+                    // check if fetch was successful
+                   let response = await fetchWithTimeout(proxy + randomOperatorAndNumberRequest(), {timeout: 10000});
+                   let json = await response.json()
+                    if (!response.ok || json.error) {
+                        throw new Error("Test proxy provided the following error:" + json.string)
+                    }
+                    // if ok response Add Proxy to operational proxy set if not already in
+                    console.log('Passed status test: ' +proxy);
+                    if (!operationalProxies.has(proxy)) {
+                        console.log("Add Proxy to operational set: " + proxy);
+                        operationalProxies.add(proxy)
+                    }
+
+                } catch (error) {
+                    // if error  remove Proxy endpoint from operational proxy set
+                    console.log('Failed status test: ' +proxy);
+                    if (operationalProxies.has(proxy)) {
+                        console.log("Remove from operational set: " + proxy);
+                        operationalProxies.delete(proxy)
+                        console.log(error)
+                    }
+                }
+            }
+            console.log("-----End proxy status test-----")
+            console.log("Operational Proxy Set After Status Test\n")
+            console.log(operationalProxies)
+        }
+
+    </script>
+
+    <style type="text/css">
+        body {
+            font-size: 150%;
+            font-family: monospace;
+        }
+
+        #logo {
+            font-family: Calibri, sans-serif;
+            font-weight: lighter;
+            color: #505050;
+            margin: 0.5em;
+        }
+
+        #calculator {
+            text-align: center;
+            margin-top: 1em;
+        }
+
+        #display {
+            font-size: 100%;
+            padding: 0.2em;
+            margin: 0.2em;
+            font-family: monospace;
+            letter-spacing: 0.1em;
+        }
+
+        .calc1 {
+            border: solid #d0d0d0 1px;
+            background-color: #f0f0f0;
+            padding: 1.6em;
+            margin: 1em;
+        }
+    </style>
+
+</head>
+<body>
+<div id="calculator">
+    <div id="logo">
+        Casidave Calcutron
+    </div>
+    <div>
+        <input type="text" id="display" readonly="1" value="">
+    </div>
+    <div>
+        <button class="calc1" onclick="Clear();">C</button>
+        <button class="calc1" onclick="Squared()">x&sup2;</button>
+        <button class="calc1" onclick="Divide();">&divide;</button>
+        <button class="calc1" onclick="Multiply();">x</button>
+    </div>
+    <div>
+        <button class="calc1" onclick="NumClick(7);">7</button>
+        <button class="calc1" onclick="NumClick(8);">8</button>
+        <button class="calc1" onclick="NumClick(9);">9</button>
+        <button class="calc1" onclick="Plus();">+</button>
+    </div>
+    <div>
+        <button class="calc1" onclick="NumClick(4);">4</button>
+        <button class="calc1" onclick="NumClick(5);">5</button>
+        <button class="calc1" onclick="NumClick(6);">6</button>
+        <button class="calc1" onclick="Minus();">-</button>
+    </div>
+    <div>
+        <button class="calc1" onclick="NumClick(1);">1</button>
+        <button class="calc1" onclick="NumClick(2);">2</button>
+        <button class="calc1" onclick="NumClick(3);">3</button>
+        <button class="calc1" onclick="Equals();">=</button>
+    </div>
+    <div>
+        <button class="calc1" onclick="NumClick(0);">0</button>
+        <button class="calc1" onclick="MemoryRecall()">R</button>
+        <button class="calc1" onclick="MemoryStore()">S</button>
+        <button class="calc1" onclick="Modulo();">%</button>
+    </div>
+</div>
+</body>
+
+<script type="text/javascript">
+    value = 1234;
+    Display();
+</script>
+
+</html>

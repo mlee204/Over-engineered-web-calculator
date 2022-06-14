@@ -1,0 +1,7 @@
+flask~=1.1.2
+psycopg2~=2.8.6
+flask-sqlalchemy~=2.5.1
+flask-marshmallow~=0.14.0
+marshmallow-sqlalchemy~=0.24.2
+requests~=2.25.1
+
